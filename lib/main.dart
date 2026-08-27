@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -40,6 +41,9 @@ class MinesweeperScreen extends StatefulWidget {
 
 class _MinesweeperScreenState extends State<MinesweeperScreen> {
   late MinesweeperGame game;
+  Timer? timer;
+  int elapsedSeconds = 0;
+  bool hasStartedTimer = false;
 
   @override
   void initState() {
@@ -48,14 +52,24 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
   }
 
   void resetGame() {
+    stopTimer();
     setState(() {
       game = MinesweeperGame(random: widget.random);
+      elapsedSeconds = 0;
+      hasStartedTimer = false;
     });
   }
 
   void revealCell(int index) {
+    if (game.canReveal(index) && !hasStartedTimer) {
+      startTimer();
+    }
+
     setState(() {
       game.reveal(index);
+      if (game.status != GameStatus.playing) {
+        stopTimer();
+      }
     });
   }
 
@@ -63,6 +77,31 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
     setState(() {
       game.toggleFlag(index);
     });
+  }
+
+  void startTimer() {
+    hasStartedTimer = true;
+    timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || game.status != GameStatus.playing) {
+        stopTimer();
+        return;
+      }
+
+      setState(() {
+        elapsedSeconds++;
+      });
+    });
+  }
+
+  void stopTimer() {
+    timer?.cancel();
+    timer = null;
+  }
+
+  @override
+  void dispose() {
+    stopTimer();
+    super.dispose();
   }
 
   @override
@@ -91,6 +130,7 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
                           children: [
                             StatusPanel(
                               mineCounter: game.remainingMineCount,
+                              elapsedSeconds: elapsedSeconds,
                               status: game.status,
                               onReset: resetGame,
                             ),
@@ -120,11 +160,13 @@ class StatusPanel extends StatelessWidget {
   const StatusPanel({
     super.key,
     required this.mineCounter,
+    required this.elapsedSeconds,
     required this.status,
     required this.onReset,
   });
 
   final int mineCounter;
+  final int elapsedSeconds;
   final GameStatus status;
   final VoidCallback onReset;
 
@@ -150,7 +192,7 @@ class StatusPanel extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          const SevenSegmentPlaceholder(text: '000'),
+          SevenSegmentPlaceholder(text: TimerDisplay.format(elapsedSeconds)),
         ],
       ),
     );
@@ -191,6 +233,12 @@ abstract final class CounterDisplay {
     }
 
     return displayValue.toString().padLeft(3, '0');
+  }
+}
+
+abstract final class TimerDisplay {
+  static String format(int seconds) {
+    return seconds.clamp(0, 999).toString().padLeft(3, '0');
   }
 }
 
@@ -590,13 +638,17 @@ class MinesweeperGame {
   int get flaggedCount => _flaggedCells;
   int get remainingMineCount => mineCount - flaggedCount;
 
-  void reveal(int index) {
+  bool canReveal(int index) {
     RangeError.checkValidIndex(index, cells);
 
-    if (status != GameStatus.playing ||
-        cells[index].isRevealed ||
-        cells[index].isFlagged) {
-      return;
+    return status == GameStatus.playing &&
+        !cells[index].isRevealed &&
+        !cells[index].isFlagged;
+  }
+
+  bool reveal(int index) {
+    if (!canReveal(index)) {
+      return false;
     }
 
     final cell = cells[index];
@@ -604,13 +656,15 @@ class MinesweeperGame {
       cell.isRevealed = true;
       _revealAllMines();
       status = GameStatus.lost;
-      return;
+      return true;
     }
 
     _revealSafeArea(index);
     if (_hasRevealedEverySafeCell) {
       status = GameStatus.won;
     }
+
+    return true;
   }
 
   void toggleFlag(int index) {

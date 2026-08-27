@@ -48,6 +48,8 @@ void main() {
     expect(secondGame, isNot(same(firstGame)));
     expect(secondMineIndexes, isNot(firstMineIndexes));
     expect(find.byType(MineTile), findsNWidgets(200));
+
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test('new game places 30 hidden mines', () {
@@ -105,6 +107,8 @@ void main() {
           .isFlagged,
       isFalse,
     );
+
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('reset clears placed flags', (WidgetTester tester) async {
@@ -124,7 +128,139 @@ void main() {
         .game;
 
     expect(find.text('030'), findsOneWidget);
+    expect(find.text('000'), findsOneWidget);
     expect(resetGame.flaggedCount, 0);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('timer does not start on launch or flagging', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(find.text('000'), findsOneWidget);
+
+    await tester.longPress(find.byType(MineTile).first);
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(find.text('000'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('timer starts on first reveal and increments once per second', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+
+    await tester.tap(firstSafeTileFinder(tester));
+    await tester.pump();
+
+    expect(find.text('000'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('001'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('002'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('timer resets to 000 when the reset button starts a new game', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+
+    await tester.tap(firstSafeTileFinder(tester));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('001'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('reset-button')));
+    await tester.pump();
+
+    expect(find.text('000'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('000'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('timer stops immediately when the player loses', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+
+    await tester.tap(firstMineTileFinder(tester));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(find.text('000'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('timer stops immediately when the player wins', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+
+    final game = tester
+        .widget<MinesweeperBoard>(find.byType(MinesweeperBoard))
+        .game;
+    final screenState = tester.state(find.byType(MinesweeperScreen)) as dynamic;
+    final safeIndexes = [
+      for (var index = 0; index < game.cells.length; index++)
+        if (!game.cells[index].hasMine) index,
+    ];
+
+    for (final index in safeIndexes) {
+      screenState.revealCell(index);
+      await tester.pump();
+
+      if (game.status == GameStatus.won) {
+        break;
+      }
+    }
+
+    expect(game.status, GameStatus.won);
+
+    final timerText = tester.widget<Text>(timerTextFinder()).data;
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(timerTextFinder(), findsOneWidget);
+    expect(tester.widget<Text>(timerTextFinder()).data, timerText);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('timer display caps at 999', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatusPanel(
+          mineCounter: MinesweeperScreen.mineCount,
+          elapsedSeconds: 1000,
+          status: GameStatus.playing,
+          onReset: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('999'), findsOneWidget);
   });
 
   testWidgets('covered tiles appear recessed while pressed', (
@@ -274,6 +410,7 @@ void main() {
       MaterialApp(
         home: StatusPanel(
           mineCounter: MinesweeperScreen.mineCount,
+          elapsedSeconds: 0,
           status: GameStatus.won,
           onReset: () {},
         ),
@@ -297,4 +434,29 @@ Set<int> mineIndexesFor(MinesweeperGame game) {
     for (var index = 0; index < game.cells.length; index++)
       if (game.cells[index].hasMine) index,
   };
+}
+
+Finder firstSafeTileFinder(WidgetTester tester) {
+  final game = tester
+      .widget<MinesweeperBoard>(find.byType(MinesweeperBoard))
+      .game;
+  final index = game.cells.indexWhere((cell) => !cell.hasMine);
+  return find.byType(MineTile).at(index);
+}
+
+Finder firstMineTileFinder(WidgetTester tester) {
+  final game = tester
+      .widget<MinesweeperBoard>(find.byType(MinesweeperBoard))
+      .game;
+  final index = game.cells.indexWhere((cell) => cell.hasMine);
+  return find.byType(MineTile).at(index);
+}
+
+Finder timerTextFinder() {
+  return find.descendant(
+    of: find.byWidgetPredicate(
+      (widget) => widget is SevenSegmentPlaceholder && widget.text != '030',
+    ),
+    matching: find.byType(Text),
+  );
 }
