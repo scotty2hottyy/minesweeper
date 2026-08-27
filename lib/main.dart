@@ -1,122 +1,275 @@
 import 'package:flutter/material.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const MinesweeperApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class MinesweeperApp extends StatelessWidget {
+  const MinesweeperApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Minesweeper',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: WindowsColors.face),
+        scaffoldBackgroundColor: WindowsColors.face,
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MinesweeperScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class MinesweeperScreen extends StatelessWidget {
+  const MinesweeperScreen({super.key});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
+  static const int columns = 10;
+  static const int rows = 20;
+  static const double outerPadding = 12;
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+      backgroundColor: WindowsColors.face,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(outerPadding),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return Center(
+                child: SizedBox(
+                  width: constraints.maxWidth,
+                  child: ClassicFrame(
+                    child: LayoutBuilder(
+                      builder: (context, innerConstraints) {
+                        final boardAreaWidth =
+                            innerConstraints.maxWidth -
+                            BeveledBox.borderWidth * 2;
+                        final cellSize = boardAreaWidth / columns;
+
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const StatusPanel(),
+                            const SizedBox(height: 8),
+                            MinesweeperBoard(cellSize: cellSize),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
       ),
     );
   }
+}
+
+class StatusPanel extends StatelessWidget {
+  const StatusPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClassicFrame(
+      inset: true,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Row(
+        children: [
+          const SevenSegmentPlaceholder(text: '010'),
+          const Spacer(),
+          BeveledBox(
+            width: 40,
+            height: 40,
+            child: CustomPaint(
+              painter: SmileyPainter(),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          const Spacer(),
+          const SevenSegmentPlaceholder(text: '000'),
+        ],
+      ),
+    );
+  }
+}
+
+class SevenSegmentPlaceholder extends StatelessWidget {
+  const SevenSegmentPlaceholder({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 66,
+      height: 36,
+      alignment: Alignment.center,
+      color: Colors.black,
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xffff0000),
+          fontSize: 28,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'monospace',
+          height: 1,
+        ),
+      ),
+    );
+  }
+}
+
+class MinesweeperBoard extends StatelessWidget {
+  const MinesweeperBoard({super.key, required this.cellSize});
+
+  final double cellSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClassicFrame(
+      inset: true,
+      padding: EdgeInsets.zero,
+      child: SizedBox(
+        width: cellSize * MinesweeperScreen.columns,
+        height: cellSize * MinesweeperScreen.rows,
+        child: GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          itemCount: MinesweeperScreen.columns * MinesweeperScreen.rows,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: MinesweeperScreen.columns,
+          ),
+          itemBuilder: (context, index) {
+            return const MineTile();
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class MineTile extends StatelessWidget {
+  const MineTile({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const BeveledBox();
+  }
+}
+
+class ClassicFrame extends StatelessWidget {
+  const ClassicFrame({
+    super.key,
+    required this.child,
+    this.inset = false,
+    this.padding = const EdgeInsets.all(8),
+  });
+
+  final Widget child;
+  final bool inset;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return BeveledBox(inset: inset, padding: padding, child: child);
+  }
+}
+
+class BeveledBox extends StatelessWidget {
+  const BeveledBox({
+    super.key,
+    this.child,
+    this.width,
+    this.height,
+    this.inset = false,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final Widget? child;
+  final double? width;
+  final double? height;
+  final bool inset;
+  final EdgeInsetsGeometry padding;
+
+  static const double borderWidth = 2;
+
+  @override
+  Widget build(BuildContext context) {
+    final light = inset ? WindowsColors.shadow : WindowsColors.highlight;
+    final dark = inset ? WindowsColors.highlight : WindowsColors.shadow;
+
+    return Container(
+      width: width,
+      height: height,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: WindowsColors.face,
+        border: Border(
+          top: BorderSide(color: light, width: borderWidth),
+          left: BorderSide(color: light, width: borderWidth),
+          right: BorderSide(color: dark, width: borderWidth),
+          bottom: BorderSide(color: dark, width: borderWidth),
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+class SmileyPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide * 0.32;
+
+    final facePaint = Paint()
+      ..color = const Color(0xffffff00)
+      ..style = PaintingStyle.fill;
+    final outlinePaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    final featurePaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(center, radius, facePaint);
+    canvas.drawCircle(center, radius, outlinePaint);
+    canvas.drawCircle(
+      Offset(center.dx - radius * 0.38, center.dy - radius * 0.25),
+      radius * 0.11,
+      featurePaint,
+    );
+    canvas.drawCircle(
+      Offset(center.dx + radius * 0.38, center.dy - radius * 0.25),
+      radius * 0.11,
+      featurePaint,
+    );
+
+    final smile = Path()
+      ..moveTo(center.dx - radius * 0.45, center.dy + radius * 0.18)
+      ..quadraticBezierTo(
+        center.dx,
+        center.dy + radius * 0.58,
+        center.dx + radius * 0.45,
+        center.dy + radius * 0.18,
+      );
+    canvas.drawPath(smile, outlinePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return false;
+  }
+}
+
+abstract final class WindowsColors {
+  static const face = Color(0xffc0c0c0);
+  static const highlight = Color(0xffffffff);
+  static const shadow = Color(0xff808080);
 }
