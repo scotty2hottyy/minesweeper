@@ -64,8 +64,108 @@ void main() {
     await tester.pumpWidget(const MinesweeperApp());
 
     expect(
-      find.text(MinesweeperScreen.mineCount.toString().padLeft(3, '0')),
+      find.text(CounterDisplay.format(MinesweeperScreen.mineCount)),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('long pressing a tile toggles a flag and updates the counter', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+
+    await tester.longPress(find.byType(MineTile).first);
+    await tester.pump();
+
+    expect(find.text('029'), findsOneWidget);
+    expect(
+      tester
+          .widget<CoveredMineTile>(find.byType(CoveredMineTile).first)
+          .cell
+          .isFlagged,
+      isTrue,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter is FlagPainter,
+      ),
+      findsOneWidget,
+    );
+
+    await tester.longPress(find.byType(MineTile).first);
+    await tester.pump();
+
+    expect(find.text('030'), findsOneWidget);
+    expect(
+      tester
+          .widget<CoveredMineTile>(find.byType(CoveredMineTile).first)
+          .cell
+          .isFlagged,
+      isFalse,
+    );
+  });
+
+  testWidgets('reset clears placed flags', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+
+    await tester.longPress(find.byType(MineTile).first);
+    await tester.pump();
+    expect(find.text('029'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('reset-button')));
+    await tester.pump();
+
+    final resetGame = tester
+        .widget<MinesweeperBoard>(find.byType(MinesweeperBoard))
+        .game;
+
+    expect(find.text('030'), findsOneWidget);
+    expect(resetGame.flaggedCount, 0);
+  });
+
+  testWidgets('covered tiles appear recessed while pressed', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox.square(
+          dimension: 40,
+          child: MineTile(
+            cell: MineCell(hasMine: false),
+            revealMines: false,
+            canInteract: true,
+            onTap: () {},
+            onLongPress: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.widget<CoveredMineTile>(find.byType(CoveredMineTile)).isPressed,
+      isFalse,
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(MineTile)),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      tester.widget<CoveredMineTile>(find.byType(CoveredMineTile)).isPressed,
+      isTrue,
+    );
+
+    await gesture.cancel();
+    await tester.pump();
+
+    expect(
+      tester.widget<CoveredMineTile>(find.byType(CoveredMineTile)).isPressed,
+      isFalse,
     );
   });
 
@@ -112,6 +212,28 @@ void main() {
     expect(game.cells[1].isRevealed, isFalse);
   });
 
+  test('flagged cells cannot be revealed by a normal tap', () {
+    final game = MinesweeperGame.withMines(
+      columns: 2,
+      rows: 2,
+      mineIndexes: {0},
+    );
+
+    game.toggleFlag(1);
+    game.reveal(1);
+
+    expect(game.flaggedCount, 1);
+    expect(game.remainingMineCount, 0);
+    expect(game.cells[1].isFlagged, isTrue);
+    expect(game.cells[1].isRevealed, isFalse);
+
+    game.toggleFlag(1);
+    game.reveal(1);
+
+    expect(game.flaggedCount, 0);
+    expect(game.cells[1].isRevealed, isTrue);
+  });
+
   test('revealing all non-mine cells wins the game', () {
     final game = MinesweeperGame.withMines(
       columns: 2,
@@ -151,7 +273,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: StatusPanel(
-          mineCount: MinesweeperScreen.mineCount,
+          mineCounter: MinesweeperScreen.mineCount,
           status: GameStatus.won,
           onReset: () {},
         ),

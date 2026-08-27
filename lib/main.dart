@@ -59,6 +59,12 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
     });
   }
 
+  void toggleFlag(int index) {
+    setState(() {
+      game.toggleFlag(index);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -84,7 +90,7 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             StatusPanel(
-                              mineCount: game.mineCount,
+                              mineCounter: game.remainingMineCount,
                               status: game.status,
                               onReset: resetGame,
                             ),
@@ -93,6 +99,7 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
                               cellSize: cellSize,
                               game: game,
                               onCellTap: revealCell,
+                              onCellLongPress: toggleFlag,
                             ),
                           ],
                         );
@@ -112,12 +119,12 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
 class StatusPanel extends StatelessWidget {
   const StatusPanel({
     super.key,
-    required this.mineCount,
+    required this.mineCounter,
     required this.status,
     required this.onReset,
   });
 
-  final int mineCount;
+  final int mineCounter;
   final GameStatus status;
   final VoidCallback onReset;
 
@@ -128,7 +135,7 @@ class StatusPanel extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Row(
         children: [
-          SevenSegmentPlaceholder(text: mineCount.toString().padLeft(3, '0')),
+          SevenSegmentPlaceholder(text: CounterDisplay.format(mineCounter)),
           const Spacer(),
           GestureDetector(
             key: const Key('reset-button'),
@@ -176,17 +183,30 @@ class SevenSegmentPlaceholder extends StatelessWidget {
   }
 }
 
+abstract final class CounterDisplay {
+  static String format(int value) {
+    final displayValue = value.clamp(-99, 999);
+    if (displayValue < 0) {
+      return '-${(-displayValue).toString().padLeft(2, '0')}';
+    }
+
+    return displayValue.toString().padLeft(3, '0');
+  }
+}
+
 class MinesweeperBoard extends StatelessWidget {
   const MinesweeperBoard({
     super.key,
     required this.cellSize,
     required this.game,
     required this.onCellTap,
+    required this.onCellLongPress,
   });
 
   final double cellSize;
   final MinesweeperGame game;
   final ValueChanged<int> onCellTap;
+  final ValueChanged<int> onCellLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -209,6 +229,7 @@ class MinesweeperBoard extends StatelessWidget {
               revealMines: game.status == GameStatus.lost,
               canInteract: game.status == GameStatus.playing,
               onTap: () => onCellTap(index),
+              onLongPress: () => onCellLongPress(index),
             );
           },
         ),
@@ -217,35 +238,135 @@ class MinesweeperBoard extends StatelessWidget {
   }
 }
 
-class MineTile extends StatelessWidget {
+class MineTile extends StatefulWidget {
   const MineTile({
     super.key,
     required this.cell,
     required this.revealMines,
     required this.canInteract,
     required this.onTap,
+    required this.onLongPress,
   });
 
   final MineCell cell;
   final bool revealMines;
   final bool canInteract;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  @override
+  State<MineTile> createState() => _MineTileState();
+}
+
+class _MineTileState extends State<MineTile> {
+  bool isPressed = false;
+
+  @override
+  void didUpdateWidget(covariant MineTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.cell.isRevealed || !widget.canInteract) {
+      isPressed = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (cell.isRevealed) {
-      return RevealedMineTile(cell: cell);
-    }
-
-    if (revealMines && cell.hasMine) {
+    if (widget.revealMines && widget.cell.hasMine) {
       return const RevealedMineTile.mine();
     }
 
-    if (!canInteract) {
-      return const BeveledBox();
+    if (widget.cell.isRevealed) {
+      return RevealedMineTile(cell: widget.cell);
     }
 
-    return GestureDetector(onTap: onTap, child: const BeveledBox());
+    if (!widget.canInteract) {
+      return CoveredMineTile(cell: widget.cell);
+    }
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
+      onTapDown: (_) => setPressed(true),
+      onTapUp: (_) => setPressed(false),
+      onTapCancel: () => setPressed(false),
+      onLongPressEnd: (_) => setPressed(false),
+      child: CoveredMineTile(cell: widget.cell, isPressed: isPressed),
+    );
+  }
+
+  void setPressed(bool value) {
+    if (isPressed == value || widget.cell.isRevealed || !widget.canInteract) {
+      return;
+    }
+
+    setState(() {
+      isPressed = value;
+    });
+  }
+}
+
+class CoveredMineTile extends StatelessWidget {
+  const CoveredMineTile({
+    super.key,
+    required this.cell,
+    this.isPressed = false,
+  });
+
+  final MineCell cell;
+  final bool isPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return BeveledBox(
+      inset: isPressed,
+      child: cell.isFlagged
+          ? CustomPaint(
+              painter: const FlagPainter(),
+              child: const SizedBox.expand(),
+            )
+          : null,
+    );
+  }
+}
+
+class FlagPainter extends CustomPainter {
+  const FlagPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final polePaint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = size.shortestSide * 0.07
+      ..style = PaintingStyle.stroke;
+    final flagPaint = Paint()
+      ..color = const Color(0xffff0000)
+      ..style = PaintingStyle.fill;
+    final basePaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+
+    final poleTop = Offset(size.width * 0.48, size.height * 0.24);
+    final poleBottom = Offset(size.width * 0.48, size.height * 0.72);
+    final flag = Path()
+      ..moveTo(poleTop.dx, poleTop.dy)
+      ..lineTo(size.width * 0.75, size.height * 0.32)
+      ..lineTo(poleTop.dx, size.height * 0.44)
+      ..close();
+    final base = Path()
+      ..moveTo(size.width * 0.32, size.height * 0.78)
+      ..lineTo(size.width * 0.64, size.height * 0.78)
+      ..lineTo(size.width * 0.72, size.height * 0.86)
+      ..lineTo(size.width * 0.24, size.height * 0.86)
+      ..close();
+
+    canvas.drawPath(flag, flagPaint);
+    canvas.drawLine(poleTop, poleBottom, polePaint);
+    canvas.drawPath(base, basePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant FlagPainter oldDelegate) {
+    return false;
   }
 }
 
@@ -463,13 +584,18 @@ class MinesweeperGame {
   GameStatus status = GameStatus.playing;
 
   int _revealedSafeCells = 0;
+  int _flaggedCells = 0;
 
   int get totalCells => columns * rows;
+  int get flaggedCount => _flaggedCells;
+  int get remainingMineCount => mineCount - flaggedCount;
 
   void reveal(int index) {
     RangeError.checkValidIndex(index, cells);
 
-    if (status != GameStatus.playing || cells[index].isRevealed) {
+    if (status != GameStatus.playing ||
+        cells[index].isRevealed ||
+        cells[index].isFlagged) {
       return;
     }
 
@@ -485,6 +611,18 @@ class MinesweeperGame {
     if (_hasRevealedEverySafeCell) {
       status = GameStatus.won;
     }
+  }
+
+  void toggleFlag(int index) {
+    RangeError.checkValidIndex(index, cells);
+
+    if (status != GameStatus.playing || cells[index].isRevealed) {
+      return;
+    }
+
+    final cell = cells[index];
+    cell.isFlagged = !cell.isFlagged;
+    _flaggedCells += cell.isFlagged ? 1 : -1;
   }
 
   bool get _hasRevealedEverySafeCell {
@@ -516,6 +654,7 @@ class MinesweeperGame {
     );
     status = GameStatus.playing;
     _revealedSafeCells = 0;
+    _flaggedCells = 0;
 
     for (var index = 0; index < totalCells; index++) {
       if (!cells[index].hasMine) {
@@ -577,7 +716,7 @@ class MinesweeperGame {
       queueIndex++;
 
       final cell = cells[index];
-      if (cell.isRevealed || cell.hasMine) {
+      if (cell.isRevealed || cell.isFlagged || cell.hasMine) {
         continue;
       }
 
@@ -590,7 +729,9 @@ class MinesweeperGame {
 
       for (final neighbor in neighborIndexes(index)) {
         final neighborCell = cells[neighbor];
-        if (!neighborCell.isRevealed && !neighborCell.hasMine) {
+        if (!neighborCell.isRevealed &&
+            !neighborCell.isFlagged &&
+            !neighborCell.hasMine) {
           queue.add(neighbor);
         }
       }
@@ -612,6 +753,7 @@ class MineCell {
   final bool hasMine;
   int adjacentMineCount = 0;
   bool isRevealed = false;
+  bool isFlagged = false;
 }
 
 abstract final class MineNumberColors {
