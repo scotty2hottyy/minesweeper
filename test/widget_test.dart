@@ -305,6 +305,24 @@ void main() {
     );
   });
 
+  testWidgets('revealed mines render a drawn mine graphic', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SizedBox.square(dimension: 40, child: RevealedMineTile.mine()),
+      ),
+    );
+
+    expect(find.text('*'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter is MinePainter,
+      ),
+      findsOneWidget,
+    );
+  });
+
   test('non-mine cells track adjacent mine counts', () {
     final game = MinesweeperGame.withMines(
       columns: 3,
@@ -420,7 +438,9 @@ void main() {
     final resetButtonPaint = tester.widget<CustomPaint>(
       find.descendant(
         of: find.byKey(const Key('reset-button')),
-        matching: find.byType(CustomPaint),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is CustomPaint && widget.painter is SmileyPainter,
+        ),
       ),
     );
 

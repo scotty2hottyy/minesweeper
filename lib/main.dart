@@ -365,14 +365,26 @@ class CoveredMineTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BeveledBox(
-      inset: isPressed,
-      child: cell.isFlagged
-          ? CustomPaint(
-              painter: const FlagPainter(),
-              child: const SizedBox.expand(),
-            )
-          : null,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 70),
+      curve: Curves.easeOut,
+      child: BeveledBox(
+        inset: isPressed,
+        child: cell.isFlagged
+            ? AnimatedPadding(
+                duration: const Duration(milliseconds: 70),
+                curve: Curves.easeOut,
+                padding: EdgeInsets.only(
+                  left: isPressed ? 1 : 0,
+                  top: isPressed ? 1 : 0,
+                ),
+                child: CustomPaint(
+                  painter: const FlagPainter(),
+                  child: const SizedBox.expand(),
+                ),
+              )
+            : null,
+      ),
     );
   }
 }
@@ -437,14 +449,9 @@ class RevealedMineTile extends StatelessWidget {
         border: Border.all(color: WindowsColors.shadow),
       ),
       child: showMine
-          ? const Text(
-              '*',
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                height: 1,
-              ),
+          ? CustomPaint(
+              painter: const MinePainter(),
+              child: const SizedBox.expand(),
             )
           : count > 0
           ? Text(
@@ -458,6 +465,51 @@ class RevealedMineTile extends StatelessWidget {
             )
           : null,
     );
+  }
+}
+
+class MinePainter extends CustomPainter {
+  const MinePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide * 0.22;
+    final spikePaint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = size.shortestSide * 0.055
+      ..strokeCap = StrokeCap.square;
+    final minePaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+    final shinePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    for (var index = 0; index < 8; index++) {
+      final angle = pi / 4 * index;
+      final start = Offset(
+        center.dx + cos(angle) * radius * 0.75,
+        center.dy + sin(angle) * radius * 0.75,
+      );
+      final end = Offset(
+        center.dx + cos(angle) * radius * 1.55,
+        center.dy + sin(angle) * radius * 1.55,
+      );
+      canvas.drawLine(start, end, spikePaint);
+    }
+
+    canvas.drawCircle(center, radius, minePaint);
+    canvas.drawCircle(
+      Offset(center.dx - radius * 0.35, center.dy - radius * 0.35),
+      radius * 0.18,
+      shinePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant MinePainter oldDelegate) {
+    return false;
   }
 }
 
@@ -501,8 +553,16 @@ class BeveledBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final light = inset ? WindowsColors.shadow : WindowsColors.highlight;
     final dark = inset ? WindowsColors.highlight : WindowsColors.shadow;
+    final secondaryLight = inset
+        ? WindowsColors.darkShadow
+        : WindowsColors.lightEdge;
+    final secondaryDark = inset
+        ? WindowsColors.lightEdge
+        : WindowsColors.darkShadow;
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 70),
+      curve: Curves.easeOut,
       width: width,
       height: height,
       padding: padding,
@@ -515,8 +575,58 @@ class BeveledBox extends StatelessWidget {
           bottom: BorderSide(color: dark, width: borderWidth),
         ),
       ),
-      child: child,
+      child: CustomPaint(
+        foregroundPainter: BevelEdgePainter(
+          topLeft: secondaryLight,
+          bottomRight: secondaryDark,
+        ),
+        child: child,
+      ),
     );
+  }
+}
+
+class BevelEdgePainter extends CustomPainter {
+  const BevelEdgePainter({required this.topLeft, required this.bottomRight});
+
+  final Color topLeft;
+  final Color bottomRight;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final topLeftPaint = Paint()
+      ..color = topLeft
+      ..strokeWidth = 1;
+    final bottomRightPaint = Paint()
+      ..color = bottomRight
+      ..strokeWidth = 1;
+
+    canvas.drawLine(
+      const Offset(1, 1),
+      Offset(size.width - 2, 1),
+      topLeftPaint,
+    );
+    canvas.drawLine(
+      const Offset(1, 1),
+      Offset(1, size.height - 2),
+      topLeftPaint,
+    );
+    canvas.drawLine(
+      Offset(1, size.height - 1),
+      Offset(size.width - 1, size.height - 1),
+      bottomRightPaint,
+    );
+    canvas.drawLine(
+      Offset(size.width - 1, 1),
+      Offset(size.width - 1, size.height - 1),
+      bottomRightPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant BevelEdgePainter oldDelegate) {
+    return topLeft != oldDelegate.topLeft ||
+        bottomRight != oldDelegate.bottomRight;
   }
 }
 
@@ -828,5 +938,7 @@ abstract final class MineNumberColors {
 abstract final class WindowsColors {
   static const face = Color(0xffc0c0c0);
   static const highlight = Color(0xffffffff);
+  static const lightEdge = Color(0xffdfdfdf);
   static const shadow = Color(0xff808080);
+  static const darkShadow = Color(0xff404040);
 }
