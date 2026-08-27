@@ -226,6 +226,80 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('losing shows a classic popup over the board only', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(firstMineTileFinder(tester));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LossPopupOverlay), findsOneWidget);
+    expect(find.text('BOOM!!!'), findsOneWidget);
+    expect(find.text('YOU LOSE!'), findsOneWidget);
+    expect(find.text('OK'), findsOneWidget);
+    expect(find.text('YOU WIN!'), findsNothing);
+
+    final statusBottom = tester.getBottomLeft(find.byType(StatusPanel)).dy;
+    final overlayTop = tester.getTopLeft(find.byType(LossPopupOverlay)).dy;
+    expect(overlayTop, greaterThan(statusBottom));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('OK dismisses the loss popup without reopening it', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(firstMineTileFinder(tester));
+    await tester.pumpAndSettle();
+    expect(find.text('YOU LOSE!'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('loss-popup-ok-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('BOOM!!!'), findsNothing);
+    expect(find.text('YOU LOSE!'), findsNothing);
+
+    await tester.pump();
+    expect(find.text('YOU LOSE!'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('reset button dismisses the loss popup and starts a new game', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(firstMineTileFinder(tester));
+    await tester.pumpAndSettle();
+    expect(find.text('YOU LOSE!'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('reset-button')));
+    await tester.pumpAndSettle();
+
+    final game = tester
+        .widget<MinesweeperBoard>(find.byType(MinesweeperBoard))
+        .game;
+    expect(game.status, GameStatus.playing);
+    expect(find.text('BOOM!!!'), findsNothing);
+    expect(find.text('YOU LOSE!'), findsNothing);
+    expect(find.byType(MineTile), findsNWidgets(200));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('timer stops immediately when the player wins', (
     WidgetTester tester,
   ) async {
@@ -258,6 +332,78 @@ void main() {
 
     expect(timerTextFinder(), findsOneWidget);
     expect(tester.widget<Text>(timerTextFinder()).data, timerText);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('winning shows a classic popup over the board only', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    final screenState = tester.state(find.byType(MinesweeperScreen)) as dynamic;
+    screenState.elapsedSeconds = 42;
+
+    await winCurrentGame(tester);
+
+    expect(find.byType(WinPopupOverlay), findsOneWidget);
+    expect(find.text('YOU WIN!'), findsOneWidget);
+    expect(find.text('TIME 042'), findsOneWidget);
+    expect(find.text('NEW BEST!'), findsOneWidget);
+    expect(find.text('OK'), findsOneWidget);
+
+    final statusBottom = tester.getBottomLeft(find.byType(StatusPanel)).dy;
+    final overlayTop = tester.getTopLeft(find.byType(WinPopupOverlay)).dy;
+    expect(overlayTop, greaterThan(statusBottom));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('OK dismisses the win popup without reopening it', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    await winCurrentGame(tester);
+    expect(find.text('YOU WIN!'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('win-popup-ok-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('YOU WIN!'), findsNothing);
+
+    await tester.pump();
+    expect(find.text('YOU WIN!'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('reset button dismisses the win popup and starts a new game', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    await winCurrentGame(tester);
+    expect(find.text('YOU WIN!'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('reset-button')));
+    await tester.pumpAndSettle();
+
+    final game = tester
+        .widget<MinesweeperBoard>(find.byType(MinesweeperBoard))
+        .game;
+    expect(game.status, GameStatus.playing);
+    expect(find.text('YOU WIN!'), findsNothing);
+    expect(find.byType(MineTile), findsNWidgets(200));
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -520,6 +666,9 @@ void main() {
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getInt(HighScoreStore.bestTimeKey), 20);
     expect(find.text('BEST 020'), findsOneWidget);
+    expect(find.text('YOU WIN!'), findsOneWidget);
+    expect(find.text('TIME 025'), findsOneWidget);
+    expect(find.text('NEW BEST!'), findsNothing);
     expect(
       tester.widget<BestTimeLabel>(find.byType(BestTimeLabel)).hasNewBestTime,
       isFalse,
@@ -585,6 +734,50 @@ void main() {
 
     expect(resetButtonPaint.painter, isA<SmileyPainter>());
     expect((resetButtonPaint.painter! as SmileyPainter).status, GameStatus.won);
+  });
+
+  testWidgets('lost games show the lost smiley state until reset', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(firstMineTileFinder(tester));
+    await tester.pumpAndSettle();
+
+    var resetButtonPaint = tester.widget<CustomPaint>(
+      find.descendant(
+        of: find.byKey(const Key('reset-button')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is CustomPaint && widget.painter is SmileyPainter,
+        ),
+      ),
+    );
+    expect(resetButtonPaint.painter, isA<SmileyPainter>());
+    expect(
+      (resetButtonPaint.painter! as SmileyPainter).status,
+      GameStatus.lost,
+    );
+
+    await tester.tap(find.byKey(const Key('reset-button')));
+    await tester.pumpAndSettle();
+
+    resetButtonPaint = tester.widget<CustomPaint>(
+      find.descendant(
+        of: find.byKey(const Key('reset-button')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is CustomPaint && widget.painter is SmileyPainter,
+        ),
+      ),
+    );
+    expect(
+      (resetButtonPaint.painter! as SmileyPainter).status,
+      GameStatus.playing,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }
 

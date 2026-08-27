@@ -49,6 +49,8 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
   int? bestTimeSeconds;
   bool hasStartedTimer = false;
   bool hasNewBestTime = false;
+  bool hasDismissedWinPopup = false;
+  bool hasDismissedLossPopup = false;
 
   @override
   void initState() {
@@ -81,6 +83,8 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
       elapsedSeconds = 0;
       hasStartedTimer = false;
       hasNewBestTime = false;
+      hasDismissedWinPopup = false;
+      hasDismissedLossPopup = false;
     });
   }
 
@@ -138,6 +142,18 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
     await highScoreStore.saveBestTime(elapsedSeconds);
   }
 
+  void dismissWinPopup() {
+    setState(() {
+      hasDismissedWinPopup = true;
+    });
+  }
+
+  void dismissLossPopup() {
+    setState(() {
+      hasDismissedLossPopup = true;
+    });
+  }
+
   @override
   void dispose() {
     stopTimer();
@@ -174,6 +190,12 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
                         );
                         final cellSize =
                             boardAreaWidth / MinesweeperScreen.columns;
+                        final showWinPopup =
+                            game.status == GameStatus.won &&
+                            !hasDismissedWinPopup;
+                        final showLossPopup =
+                            game.status == GameStatus.lost &&
+                            !hasDismissedLossPopup;
 
                         return Column(
                           mainAxisSize: MainAxisSize.min,
@@ -187,11 +209,29 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
                               onReset: resetGame,
                             ),
                             const SizedBox(height: 8),
-                            MinesweeperBoard(
-                              cellSize: cellSize,
-                              game: game,
-                              onCellTap: revealCell,
-                              onCellLongPress: toggleFlag,
+                            Stack(
+                              children: [
+                                MinesweeperBoard(
+                                  cellSize: cellSize,
+                                  game: game,
+                                  onCellTap: revealCell,
+                                  onCellLongPress: toggleFlag,
+                                ),
+                                if (showWinPopup)
+                                  Positioned.fill(
+                                    child: WinPopupOverlay(
+                                      elapsedSeconds: elapsedSeconds,
+                                      hasNewBestTime: hasNewBestTime,
+                                      onDismiss: dismissWinPopup,
+                                    ),
+                                  ),
+                                if (showLossPopup)
+                                  Positioned.fill(
+                                    child: LossPopupOverlay(
+                                      onDismiss: dismissLossPopup,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ],
                         );
@@ -201,6 +241,226 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
                 ),
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class LossPopupOverlay extends StatelessWidget {
+  const LossPopupOverlay({super.key, required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClassicPopupOverlay(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'BOOM!!!',
+            key: Key('loss-popup-boom'),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'YOU LOSE!',
+            key: Key('loss-popup-title'),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ClassicButton(
+            buttonKey: const Key('loss-popup-ok-button'),
+            onPressed: onDismiss,
+            child: 'OK',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class WinPopupOverlay extends StatelessWidget {
+  const WinPopupOverlay({
+    super.key,
+    required this.elapsedSeconds,
+    required this.hasNewBestTime,
+    required this.onDismiss,
+  });
+
+  final int elapsedSeconds;
+  final bool hasNewBestTime;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClassicPopupOverlay(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'YOU WIN!',
+            key: Key('win-popup-title'),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'TIME ${TimerDisplay.format(elapsedSeconds)}',
+            key: const Key('win-popup-time'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+              height: 1,
+            ),
+          ),
+          if (hasNewBestTime) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'NEW BEST!',
+              key: Key('win-popup-new-best'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+                height: 1,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          ClassicButton(
+            buttonKey: const Key('win-popup-ok-button'),
+            onPressed: onDismiss,
+            child: 'OK',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ClassicPopupOverlay extends StatelessWidget {
+  const ClassicPopupOverlay({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: false,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final popupWidth = constraints.hasBoundedWidth
+              ? min(190.0, max(0.0, constraints.maxWidth - 24))
+              : 190.0;
+
+          if (popupWidth == 0) {
+            return const SizedBox.shrink();
+          }
+
+          return Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 24),
+              child: SizedBox(
+                width: popupWidth,
+                child: ClassicFrame(
+                  padding: const EdgeInsets.all(2),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        color: const Color(0xff000080),
+                        child: const Text(
+                          'Minesweeper',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace',
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                        child: child,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class ClassicButton extends StatelessWidget {
+  const ClassicButton({
+    super.key,
+    required this.buttonKey,
+    required this.onPressed,
+    required this.child,
+  });
+
+  final Key buttonKey;
+  final VoidCallback onPressed;
+  final String child;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: buttonKey,
+      onTap: onPressed,
+      child: BeveledBox(
+        width: 72,
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Center(
+          child: Text(
+            child,
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+              height: 1,
+            ),
           ),
         ),
       ),
@@ -793,6 +1053,8 @@ class SmileyPainter extends CustomPainter {
     canvas.drawCircle(center, radius, outlinePaint);
     if (status == GameStatus.won) {
       _drawSunglasses(canvas, center, radius, featurePaint);
+    } else if (status == GameStatus.lost) {
+      _drawXEyes(canvas, center, radius, outlinePaint);
     } else {
       canvas.drawCircle(
         Offset(center.dx - radius * 0.38, center.dy - radius * 0.25),
@@ -806,7 +1068,14 @@ class SmileyPainter extends CustomPainter {
       );
     }
 
-    final smile = Path()
+    final mouth = status == GameStatus.lost
+        ? _frownPath(center, radius)
+        : _smilePath(center, radius);
+    canvas.drawPath(mouth, outlinePaint);
+  }
+
+  Path _smilePath(Offset center, double radius) {
+    return Path()
       ..moveTo(center.dx - radius * 0.45, center.dy + radius * 0.18)
       ..quadraticBezierTo(
         center.dx,
@@ -814,7 +1083,38 @@ class SmileyPainter extends CustomPainter {
         center.dx + radius * 0.45,
         center.dy + radius * 0.18,
       );
-    canvas.drawPath(smile, outlinePaint);
+  }
+
+  Path _frownPath(Offset center, double radius) {
+    return Path()
+      ..moveTo(center.dx - radius * 0.45, center.dy + radius * 0.45)
+      ..quadraticBezierTo(
+        center.dx,
+        center.dy + radius * 0.08,
+        center.dx + radius * 0.45,
+        center.dy + radius * 0.45,
+      );
+  }
+
+  void _drawXEyes(Canvas canvas, Offset center, double radius, Paint eyePaint) {
+    final eyeOffsetX = radius * 0.38;
+    final eyeOffsetY = radius * 0.25;
+    final eyeSize = radius * 0.18;
+    final leftEye = Offset(center.dx - eyeOffsetX, center.dy - eyeOffsetY);
+    final rightEye = Offset(center.dx + eyeOffsetX, center.dy - eyeOffsetY);
+
+    for (final eye in [leftEye, rightEye]) {
+      canvas.drawLine(
+        Offset(eye.dx - eyeSize, eye.dy - eyeSize),
+        Offset(eye.dx + eyeSize, eye.dy + eyeSize),
+        eyePaint,
+      );
+      canvas.drawLine(
+        Offset(eye.dx + eyeSize, eye.dy - eyeSize),
+        Offset(eye.dx - eyeSize, eye.dy + eyeSize),
+        eyePaint,
+      );
+    }
   }
 
   void _drawSunglasses(
