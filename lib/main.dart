@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 void main() {
@@ -22,12 +24,40 @@ class MinesweeperApp extends StatelessWidget {
   }
 }
 
-class MinesweeperScreen extends StatelessWidget {
-  const MinesweeperScreen({super.key});
+class MinesweeperScreen extends StatefulWidget {
+  const MinesweeperScreen({super.key, this.random});
 
   static const int columns = 10;
   static const int rows = 20;
+  static const int mineCount = 30;
   static const double outerPadding = 12;
+
+  final Random? random;
+
+  @override
+  State<MinesweeperScreen> createState() => _MinesweeperScreenState();
+}
+
+class _MinesweeperScreenState extends State<MinesweeperScreen> {
+  late MinesweeperGame game;
+
+  @override
+  void initState() {
+    super.initState();
+    game = MinesweeperGame(random: widget.random);
+  }
+
+  void resetGame() {
+    setState(() {
+      game = MinesweeperGame(random: widget.random);
+    });
+  }
+
+  void revealCell(int index) {
+    setState(() {
+      game.reveal(index);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +65,7 @@ class MinesweeperScreen extends StatelessWidget {
       backgroundColor: WindowsColors.face,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(outerPadding),
+          padding: const EdgeInsets.all(MinesweeperScreen.outerPadding),
           child: LayoutBuilder(
             builder: (context, constraints) {
               return Center(
@@ -47,14 +77,23 @@ class MinesweeperScreen extends StatelessWidget {
                         final boardAreaWidth =
                             innerConstraints.maxWidth -
                             BeveledBox.borderWidth * 2;
-                        final cellSize = boardAreaWidth / columns;
+                        final cellSize =
+                            boardAreaWidth / MinesweeperScreen.columns;
 
                         return Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const StatusPanel(),
+                            StatusPanel(
+                              mineCount: game.mineCount,
+                              status: game.status,
+                              onReset: resetGame,
+                            ),
                             const SizedBox(height: 8),
-                            MinesweeperBoard(cellSize: cellSize),
+                            MinesweeperBoard(
+                              cellSize: cellSize,
+                              game: game,
+                              onCellTap: revealCell,
+                            ),
                           ],
                         );
                       },
@@ -71,7 +110,16 @@ class MinesweeperScreen extends StatelessWidget {
 }
 
 class StatusPanel extends StatelessWidget {
-  const StatusPanel({super.key});
+  const StatusPanel({
+    super.key,
+    required this.mineCount,
+    required this.status,
+    required this.onReset,
+  });
+
+  final int mineCount;
+  final GameStatus status;
+  final VoidCallback onReset;
 
   @override
   Widget build(BuildContext context) {
@@ -80,14 +128,18 @@ class StatusPanel extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Row(
         children: [
-          const SevenSegmentPlaceholder(text: '010'),
+          SevenSegmentPlaceholder(text: mineCount.toString().padLeft(3, '0')),
           const Spacer(),
-          BeveledBox(
-            width: 40,
-            height: 40,
-            child: CustomPaint(
-              painter: SmileyPainter(),
-              child: const SizedBox.expand(),
+          GestureDetector(
+            key: const Key('reset-button'),
+            onTap: onReset,
+            child: BeveledBox(
+              width: 40,
+              height: 40,
+              child: CustomPaint(
+                painter: SmileyPainter(status: status),
+                child: const SizedBox.expand(),
+              ),
             ),
           ),
           const Spacer(),
@@ -125,9 +177,16 @@ class SevenSegmentPlaceholder extends StatelessWidget {
 }
 
 class MinesweeperBoard extends StatelessWidget {
-  const MinesweeperBoard({super.key, required this.cellSize});
+  const MinesweeperBoard({
+    super.key,
+    required this.cellSize,
+    required this.game,
+    required this.onCellTap,
+  });
 
   final double cellSize;
+  final MinesweeperGame game;
+  final ValueChanged<int> onCellTap;
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +204,12 @@ class MinesweeperBoard extends StatelessWidget {
             crossAxisCount: MinesweeperScreen.columns,
           ),
           itemBuilder: (context, index) {
-            return const MineTile();
+            return MineTile(
+              cell: game.cells[index],
+              revealMines: game.status == GameStatus.lost,
+              canInteract: game.status == GameStatus.playing,
+              onTap: () => onCellTap(index),
+            );
           },
         ),
       ),
@@ -154,11 +218,77 @@ class MinesweeperBoard extends StatelessWidget {
 }
 
 class MineTile extends StatelessWidget {
-  const MineTile({super.key});
+  const MineTile({
+    super.key,
+    required this.cell,
+    required this.revealMines,
+    required this.canInteract,
+    required this.onTap,
+  });
+
+  final MineCell cell;
+  final bool revealMines;
+  final bool canInteract;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return const BeveledBox();
+    if (cell.isRevealed) {
+      return RevealedMineTile(cell: cell);
+    }
+
+    if (revealMines && cell.hasMine) {
+      return const RevealedMineTile.mine();
+    }
+
+    if (!canInteract) {
+      return const BeveledBox();
+    }
+
+    return GestureDetector(onTap: onTap, child: const BeveledBox());
+  }
+}
+
+class RevealedMineTile extends StatelessWidget {
+  const RevealedMineTile({super.key, required this.cell}) : showMine = false;
+
+  const RevealedMineTile.mine({super.key}) : cell = null, showMine = true;
+
+  final MineCell? cell;
+  final bool showMine;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = cell?.adjacentMineCount ?? 0;
+
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: WindowsColors.face,
+        border: Border.all(color: WindowsColors.shadow),
+      ),
+      child: showMine
+          ? const Text(
+              '*',
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                height: 1,
+              ),
+            )
+          : count > 0
+          ? Text(
+              '$count',
+              style: TextStyle(
+                color: MineNumberColors.colorFor(count),
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                height: 1,
+              ),
+            )
+          : null,
+    );
   }
 }
 
@@ -222,6 +352,10 @@ class BeveledBox extends StatelessWidget {
 }
 
 class SmileyPainter extends CustomPainter {
+  const SmileyPainter({required this.status});
+
+  final GameStatus status;
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
@@ -240,16 +374,20 @@ class SmileyPainter extends CustomPainter {
 
     canvas.drawCircle(center, radius, facePaint);
     canvas.drawCircle(center, radius, outlinePaint);
-    canvas.drawCircle(
-      Offset(center.dx - radius * 0.38, center.dy - radius * 0.25),
-      radius * 0.11,
-      featurePaint,
-    );
-    canvas.drawCircle(
-      Offset(center.dx + radius * 0.38, center.dy - radius * 0.25),
-      radius * 0.11,
-      featurePaint,
-    );
+    if (status == GameStatus.won) {
+      _drawSunglasses(canvas, center, radius, featurePaint);
+    } else {
+      canvas.drawCircle(
+        Offset(center.dx - radius * 0.38, center.dy - radius * 0.25),
+        radius * 0.11,
+        featurePaint,
+      );
+      canvas.drawCircle(
+        Offset(center.dx + radius * 0.38, center.dy - radius * 0.25),
+        radius * 0.11,
+        featurePaint,
+      );
+    }
 
     final smile = Path()
       ..moveTo(center.dx - radius * 0.45, center.dy + radius * 0.18)
@@ -262,9 +400,232 @@ class SmileyPainter extends CustomPainter {
     canvas.drawPath(smile, outlinePaint);
   }
 
+  void _drawSunglasses(
+    Canvas canvas,
+    Offset center,
+    double radius,
+    Paint featurePaint,
+  ) {
+    final lensSize = Size(radius * 0.48, radius * 0.26);
+    final leftLens = Rect.fromCenter(
+      center: Offset(center.dx - radius * 0.3, center.dy - radius * 0.25),
+      width: lensSize.width,
+      height: lensSize.height,
+    );
+    final rightLens = Rect.fromCenter(
+      center: Offset(center.dx + radius * 0.3, center.dy - radius * 0.25),
+      width: lensSize.width,
+      height: lensSize.height,
+    );
+
+    canvas.drawRect(leftLens, featurePaint);
+    canvas.drawRect(rightLens, featurePaint);
+    canvas.drawLine(
+      Offset(leftLens.right, leftLens.center.dy),
+      Offset(rightLens.left, rightLens.center.dy),
+      featurePaint..strokeWidth = 1.5,
+    );
+  }
+
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
+  bool shouldRepaint(covariant SmileyPainter oldDelegate) {
+    return status != oldDelegate.status;
+  }
+}
+
+enum GameStatus { playing, won, lost }
+
+class MinesweeperGame {
+  MinesweeperGame({
+    this.columns = MinesweeperScreen.columns,
+    this.rows = MinesweeperScreen.rows,
+    this.mineCount = MinesweeperScreen.mineCount,
+    Random? random,
+  }) {
+    _validateDimensions();
+    _startWithRandomMines(random ?? Random());
+  }
+
+  MinesweeperGame.withMines({
+    this.columns = MinesweeperScreen.columns,
+    this.rows = MinesweeperScreen.rows,
+    required Set<int> mineIndexes,
+  }) : mineCount = mineIndexes.length {
+    _validateDimensions();
+    _startWithMines(mineIndexes);
+  }
+
+  final int columns;
+  final int rows;
+  final int mineCount;
+
+  late List<MineCell> cells;
+  GameStatus status = GameStatus.playing;
+
+  int _revealedSafeCells = 0;
+
+  int get totalCells => columns * rows;
+
+  void reveal(int index) {
+    RangeError.checkValidIndex(index, cells);
+
+    if (status != GameStatus.playing || cells[index].isRevealed) {
+      return;
+    }
+
+    final cell = cells[index];
+    if (cell.hasMine) {
+      cell.isRevealed = true;
+      _revealAllMines();
+      status = GameStatus.lost;
+      return;
+    }
+
+    _revealSafeArea(index);
+    if (_hasRevealedEverySafeCell) {
+      status = GameStatus.won;
+    }
+  }
+
+  bool get _hasRevealedEverySafeCell {
+    return _revealedSafeCells == totalCells - mineCount;
+  }
+
+  void _startWithRandomMines(Random random) {
+    final indexes = List<int>.generate(totalCells, (index) => index)
+      ..shuffle(random);
+    _startWithMines(indexes.take(mineCount).toSet());
+  }
+
+  void _startWithMines(Set<int> mineIndexes) {
+    if (mineIndexes.length != mineCount) {
+      throw ArgumentError.value(
+        mineIndexes,
+        'mineIndexes',
+        'must contain exactly $mineCount unique mines',
+      );
+    }
+
+    for (final index in mineIndexes) {
+      RangeError.checkValueInInterval(index, 0, totalCells - 1, 'mineIndexes');
+    }
+
+    cells = List<MineCell>.generate(
+      totalCells,
+      (index) => MineCell(hasMine: mineIndexes.contains(index)),
+    );
+    status = GameStatus.playing;
+    _revealedSafeCells = 0;
+
+    for (var index = 0; index < totalCells; index++) {
+      if (!cells[index].hasMine) {
+        cells[index].adjacentMineCount = neighborIndexes(index)
+            .where((neighbor) => cells[neighbor].hasMine)
+            .length;
+      }
+    }
+  }
+
+  void _validateDimensions() {
+    if (columns <= 0 || rows <= 0) {
+      throw ArgumentError('Board dimensions must be positive.');
+    }
+
+    final cellCount = columns * rows;
+    if (mineCount < 0 || mineCount >= cellCount) {
+      throw ArgumentError.value(
+        mineCount,
+        'mineCount',
+        'must be between 0 and ${cellCount - 1}',
+      );
+    }
+  }
+
+  Iterable<int> neighborIndexes(int index) sync* {
+    RangeError.checkValidIndex(index, cells);
+
+    final row = index ~/ columns;
+    final column = index % columns;
+
+    for (var rowOffset = -1; rowOffset <= 1; rowOffset++) {
+      for (var columnOffset = -1; columnOffset <= 1; columnOffset++) {
+        if (rowOffset == 0 && columnOffset == 0) {
+          continue;
+        }
+
+        final neighborRow = row + rowOffset;
+        final neighborColumn = column + columnOffset;
+        final isInBounds =
+            neighborRow >= 0 &&
+            neighborRow < rows &&
+            neighborColumn >= 0 &&
+            neighborColumn < columns;
+
+        if (isInBounds) {
+          yield neighborRow * columns + neighborColumn;
+        }
+      }
+    }
+  }
+
+  void _revealSafeArea(int startIndex) {
+    final queue = <int>[startIndex];
+    var queueIndex = 0;
+
+    while (queueIndex < queue.length) {
+      final index = queue[queueIndex];
+      queueIndex++;
+
+      final cell = cells[index];
+      if (cell.isRevealed || cell.hasMine) {
+        continue;
+      }
+
+      cell.isRevealed = true;
+      _revealedSafeCells++;
+
+      if (cell.adjacentMineCount != 0) {
+        continue;
+      }
+
+      for (final neighbor in neighborIndexes(index)) {
+        final neighborCell = cells[neighbor];
+        if (!neighborCell.isRevealed && !neighborCell.hasMine) {
+          queue.add(neighbor);
+        }
+      }
+    }
+  }
+
+  void _revealAllMines() {
+    for (final cell in cells) {
+      if (cell.hasMine) {
+        cell.isRevealed = true;
+      }
+    }
+  }
+}
+
+class MineCell {
+  MineCell({required this.hasMine});
+
+  final bool hasMine;
+  int adjacentMineCount = 0;
+  bool isRevealed = false;
+}
+
+abstract final class MineNumberColors {
+  static Color colorFor(int count) {
+    return switch (count) {
+      1 => const Color(0xff0000ff),
+      2 => const Color(0xff008000),
+      3 => const Color(0xffff0000),
+      4 => const Color(0xff000080),
+      5 => const Color(0xff800000),
+      6 => const Color(0xff008080),
+      7 => Colors.black,
+      _ => const Color(0xff808080),
+    };
   }
 }
 
