@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MinesweeperApp());
@@ -40,15 +41,37 @@ class MinesweeperScreen extends StatefulWidget {
 }
 
 class _MinesweeperScreenState extends State<MinesweeperScreen> {
+  static const HighScoreStore highScoreStore = HighScoreStore();
+
   late MinesweeperGame game;
   Timer? timer;
   int elapsedSeconds = 0;
+  int? bestTimeSeconds;
   bool hasStartedTimer = false;
+  bool hasNewBestTime = false;
 
   @override
   void initState() {
     super.initState();
     game = MinesweeperGame(random: widget.random);
+    loadBestTime();
+  }
+
+  Future<void> loadBestTime() async {
+    final loadedBestTime = await highScoreStore.loadBestTime();
+    if (!mounted) {
+      return;
+    }
+
+    if (hasNewBestTime ||
+        (bestTimeSeconds != null &&
+            (loadedBestTime == null || bestTimeSeconds! <= loadedBestTime))) {
+      return;
+    }
+
+    setState(() {
+      bestTimeSeconds = loadedBestTime;
+    });
   }
 
   void resetGame() {
@@ -57,6 +80,7 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
       game = MinesweeperGame(random: widget.random);
       elapsedSeconds = 0;
       hasStartedTimer = false;
+      hasNewBestTime = false;
     });
   }
 
@@ -71,6 +95,10 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
         stopTimer();
       }
     });
+
+    if (game.status == GameStatus.won) {
+      updateBestTimeAfterWin();
+    }
   }
 
   void toggleFlag(int index) {
@@ -98,6 +126,18 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
     timer = null;
   }
 
+  Future<void> updateBestTimeAfterWin() async {
+    if (bestTimeSeconds != null && elapsedSeconds >= bestTimeSeconds!) {
+      return;
+    }
+
+    setState(() {
+      bestTimeSeconds = elapsedSeconds;
+      hasNewBestTime = true;
+    });
+    await highScoreStore.saveBestTime(elapsedSeconds);
+  }
+
   @override
   void dispose() {
     stopTimer();
@@ -113,15 +153,25 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
           padding: const EdgeInsets.all(MinesweeperScreen.outerPadding),
           child: LayoutBuilder(
             builder: (context, constraints) {
+              final availableWidth =
+                  constraints.hasBoundedWidth && constraints.maxWidth.isFinite
+                  ? max(0.0, constraints.maxWidth)
+                  : 0.0;
+              if (availableWidth == 0) {
+                return const SizedBox.shrink();
+              }
+
               return Center(
                 child: SizedBox(
-                  width: constraints.maxWidth,
+                  width: availableWidth,
                   child: ClassicFrame(
                     child: LayoutBuilder(
                       builder: (context, innerConstraints) {
-                        final boardAreaWidth =
-                            innerConstraints.maxWidth -
-                            BeveledBox.borderWidth * 2;
+                        final boardAreaWidth = max(
+                          0.0,
+                          innerConstraints.maxWidth -
+                              BeveledBox.borderWidth * 2,
+                        );
                         final cellSize =
                             boardAreaWidth / MinesweeperScreen.columns;
 
@@ -131,6 +181,8 @@ class _MinesweeperScreenState extends State<MinesweeperScreen> {
                             StatusPanel(
                               mineCounter: game.remainingMineCount,
                               elapsedSeconds: elapsedSeconds,
+                              bestTimeSeconds: bestTimeSeconds,
+                              hasNewBestTime: hasNewBestTime,
                               status: game.status,
                               onReset: resetGame,
                             ),
@@ -161,12 +213,16 @@ class StatusPanel extends StatelessWidget {
     super.key,
     required this.mineCounter,
     required this.elapsedSeconds,
+    required this.bestTimeSeconds,
+    required this.hasNewBestTime,
     required this.status,
     required this.onReset,
   });
 
   final int mineCounter;
   final int elapsedSeconds;
+  final int? bestTimeSeconds;
+  final bool hasNewBestTime;
   final GameStatus status;
   final VoidCallback onReset;
 
@@ -177,8 +233,28 @@ class StatusPanel extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Row(
         children: [
-          SevenSegmentPlaceholder(text: CounterDisplay.format(mineCounter)),
-          const Spacer(),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SevenSegmentPlaceholder(
+                      text: CounterDisplay.format(mineCounter),
+                    ),
+                    const SizedBox(width: 6),
+                    BestTimeLabel(
+                      bestTimeSeconds: bestTimeSeconds,
+                      hasNewBestTime: hasNewBestTime,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
           GestureDetector(
             key: const Key('reset-button'),
             onTap: onReset,
@@ -191,9 +267,55 @@ class StatusPanel extends StatelessWidget {
               ),
             ),
           ),
-          const Spacer(),
-          SevenSegmentPlaceholder(text: TimerDisplay.format(elapsedSeconds)),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: SevenSegmentPlaceholder(
+                  text: TimerDisplay.format(elapsedSeconds),
+                ),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class BestTimeLabel extends StatelessWidget {
+  const BestTimeLabel({
+    super.key,
+    required this.bestTimeSeconds,
+    required this.hasNewBestTime,
+  });
+
+  final int? bestTimeSeconds;
+  final bool hasNewBestTime;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = bestTimeSeconds == null
+        ? 'BEST ---'
+        : 'BEST ${TimerDisplay.format(bestTimeSeconds!)}';
+
+    return Container(
+      key: const Key('best-time-label'),
+      height: 36,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      color: hasNewBestTime ? const Color(0xff000080) : WindowsColors.face,
+      child: Text(
+        text,
+        style: TextStyle(
+          color: hasNewBestTime ? Colors.white : Colors.black,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'monospace',
+          height: 1,
+        ),
       ),
     );
   }
@@ -239,6 +361,22 @@ abstract final class CounterDisplay {
 abstract final class TimerDisplay {
   static String format(int seconds) {
     return seconds.clamp(0, 999).toString().padLeft(3, '0');
+  }
+}
+
+class HighScoreStore {
+  const HighScoreStore();
+
+  static const String bestTimeKey = 'best_time_seconds';
+
+  Future<int?> loadBestTime() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getInt(bestTimeKey);
+  }
+
+  Future<void> saveBestTime(int seconds) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setInt(bestTimeKey, seconds);
   }
 }
 

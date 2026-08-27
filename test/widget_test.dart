@@ -2,15 +2,21 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:minesweeper/main.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('shows classic Minesweeper layout', (WidgetTester tester) async {
     await tester.pumpWidget(const MinesweeperApp());
 
     expect(find.byType(StatusPanel), findsOneWidget);
     expect(find.text('030'), findsOneWidget);
+    expect(find.text('BEST ---'), findsOneWidget);
     expect(find.text('010'), findsNothing);
     expect(find.text('000'), findsOneWidget);
     expect(find.byType(MineTile), findsNWidgets(200));
@@ -23,6 +29,14 @@ void main() {
         0.001,
       ),
     );
+  });
+
+  testWidgets('handles temporary zero-size startup constraints', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const SizedBox.shrink(child: MinesweeperApp()));
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('reset button starts a new randomized game', (
@@ -254,6 +268,8 @@ void main() {
         home: StatusPanel(
           mineCounter: MinesweeperScreen.mineCount,
           elapsedSeconds: 1000,
+          bestTimeSeconds: null,
+          hasNewBestTime: false,
           status: GameStatus.playing,
           onReset: () {},
         ),
@@ -421,6 +437,127 @@ void main() {
     expect(game.cells[3].isRevealed, isFalse);
   });
 
+  testWidgets('loads a saved best time when the app starts', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({HighScoreStore.bestTimeKey: 17});
+
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('BEST 017'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('first win becomes the saved best time', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    final screenState = tester.state(find.byType(MinesweeperScreen)) as dynamic;
+    screenState.elapsedSeconds = 42;
+
+    await winCurrentGame(tester);
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getInt(HighScoreStore.bestTimeKey), 42);
+    expect(find.text('BEST 042'), findsOneWidget);
+    expect(
+      tester.widget<BestTimeLabel>(find.byType(BestTimeLabel)).hasNewBestTime,
+      isTrue,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('a faster win replaces the saved best time immediately', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({HighScoreStore.bestTimeKey: 30});
+
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    final screenState = tester.state(find.byType(MinesweeperScreen)) as dynamic;
+    screenState.elapsedSeconds = 12;
+
+    await winCurrentGame(tester);
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getInt(HighScoreStore.bestTimeKey), 12);
+    expect(find.text('BEST 012'), findsOneWidget);
+    expect(
+      tester.widget<BestTimeLabel>(find.byType(BestTimeLabel)).hasNewBestTime,
+      isTrue,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('a slower win does not replace the saved best time', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({HighScoreStore.bestTimeKey: 20});
+
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    final screenState = tester.state(find.byType(MinesweeperScreen)) as dynamic;
+    screenState.elapsedSeconds = 25;
+
+    await winCurrentGame(tester);
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getInt(HighScoreStore.bestTimeKey), 20);
+    expect(find.text('BEST 020'), findsOneWidget);
+    expect(
+      tester.widget<BestTimeLabel>(find.byType(BestTimeLabel)).hasNewBestTime,
+      isFalse,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('losing and resetting do not change the saved best time', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({HighScoreStore.bestTimeKey: 40});
+
+    await tester.pumpWidget(
+      MaterialApp(home: MinesweeperScreen(random: Random(1))),
+    );
+    await tester.pumpAndSettle();
+
+    final screenState = tester.state(find.byType(MinesweeperScreen)) as dynamic;
+    screenState.elapsedSeconds = 10;
+
+    await tester.tap(firstMineTileFinder(tester));
+    await tester.pumpAndSettle();
+
+    var preferences = await SharedPreferences.getInstance();
+    expect(preferences.getInt(HighScoreStore.bestTimeKey), 40);
+    expect(find.text('BEST 040'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('reset-button')));
+    await tester.pumpAndSettle();
+
+    preferences = await SharedPreferences.getInstance();
+    expect(preferences.getInt(HighScoreStore.bestTimeKey), 40);
+    expect(find.text('BEST 040'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('won games show the win state in the smiley area', (
     WidgetTester tester,
   ) async {
@@ -429,6 +566,8 @@ void main() {
         home: StatusPanel(
           mineCounter: MinesweeperScreen.mineCount,
           elapsedSeconds: 0,
+          bestTimeSeconds: null,
+          hasNewBestTime: false,
           status: GameStatus.won,
           onReset: () {},
         ),
@@ -470,6 +609,29 @@ Finder firstMineTileFinder(WidgetTester tester) {
       .game;
   final index = game.cells.indexWhere((cell) => cell.hasMine);
   return find.byType(MineTile).at(index);
+}
+
+Future<void> winCurrentGame(WidgetTester tester) async {
+  final game = tester
+      .widget<MinesweeperBoard>(find.byType(MinesweeperBoard))
+      .game;
+  final screenState = tester.state(find.byType(MinesweeperScreen)) as dynamic;
+  final safeIndexes = [
+    for (var index = 0; index < game.cells.length; index++)
+      if (!game.cells[index].hasMine) index,
+  ];
+
+  for (final index in safeIndexes) {
+    screenState.revealCell(index);
+    await tester.pump();
+
+    if (game.status == GameStatus.won) {
+      await tester.pumpAndSettle();
+      return;
+    }
+  }
+
+  fail('Expected game to be won.');
 }
 
 Finder timerTextFinder() {
